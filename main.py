@@ -1,46 +1,53 @@
-from flask import Flask, request, render_template, jsonify
+from flask import Flask, request, render_template
+from joblib import load
 import os
+import ast 
 import numpy as np
 import pandas as pd
-import pickle
 
 # Flask app
 app = Flask(__name__)
 
-# Load datasets with robust file paths
+# File paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATASETS_DIR = os.path.join(BASE_DIR, "datasets")
 MODELS_DIR = os.path.join(BASE_DIR, "models")
 
-sym_des = pd.read_csv(os.path.join(DATASETS_DIR, "symtoms_df.csv"))
-precautions = pd.read_csv(os.path.join(DATASETS_DIR, "precautions_df.csv"))
-workout = pd.read_csv(os.path.join(DATASETS_DIR, "workout_df.csv"))
-description = pd.read_csv(os.path.join(DATASETS_DIR, "description.csv"))
-medications = pd.read_csv(os.path.join(DATASETS_DIR, "medications.csv"))
-diets = pd.read_csv(os.path.join(DATASETS_DIR, "diets.csv"))
+# Load datasets
+def load_data(file_name):
+    """Helper function to load a CSV file."""
+    file_path = os.path.join(DATASETS_DIR, file_name)
+    try:
+        return pd.read_csv(file_path)
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Dataset '{file_name}' not found in {DATASETS_DIR}. Please ensure the file exists.")
+    except Exception as e:
+        raise RuntimeError(f"Error loading dataset '{file_name}': {e}")
 
-# Extract unique symptoms from all symptom columns
+sym_des = load_data("symtoms_df.csv")
+precautions = load_data("precautions_df.csv")
+workout = load_data("workout_df.csv")
+description = load_data("description.csv")
+medications = load_data("medications.csv")
+diets = load_data("diets.csv")
+
+# Extract unique symptoms for the autocomplete feature
 columns_to_check = ['Symptom_1', 'Symptom_2', 'Symptom_3', 'Symptom_4']
-
-# Flatten values into a single array, remove NaNs, and empty strings
 unique_symptoms = (
     sym_des[columns_to_check]
-    .values.ravel('K')  # Flatten the DataFrame
+    .values.ravel('K')  # Flatten DataFrame
     .tolist()
 )
-# Remove whitespace and filter out invalid entries
-unique_symptoms = list(set(symptom.strip() for symptom in unique_symptoms if isinstance(symptom, str) and symptom.strip()))
-# Sort the symptoms
-unique_symptoms = sorted(unique_symptoms)
-
+unique_symptoms = sorted(set(s.strip() for s in unique_symptoms if isinstance(s, str) and s.strip()))
 
 # Load model
 try:
-    svc = pickle.load(open(os.path.join(MODELS_DIR, 'svc.pkl'), 'rb'))
+    model_path = os.path.join(MODELS_DIR, 'random_forest_model.joblib')
+    svc = load(model_path)
 except FileNotFoundError:
-    raise FileNotFoundError("Model file not found. Please ensure 'svc.pkl' is present.")
-except pickle.UnpicklingError:
-    raise ValueError("Error loading the model. Ensure it's a valid pickle file.")
+    raise FileNotFoundError(f"Model file not found. Please ensure '{model_path}' exists.")
+except Exception as e:
+    raise RuntimeError(f"Error loading the model: {e}")
 
 # Symptom dictionary
 symptoms_dict = {
@@ -223,25 +230,54 @@ diseases_list = {
 }
 
 # Helper function
-def helper(dis):
-    """
-    Retrieves description, medications, and workout suggestions for the given disease.
-    """
-    desc = description[description['Disease'] == dis]['Description'].values[0] if not description.empty else "Description not available"
-    med = medications[medications['Disease'] == dis]['Medication'].tolist() if not medications.empty else ["No medications available"]
-    wrkout = workout[workout['disease'] == dis]['workout'].tolist() if not workout.empty else ["No workouts available"]
-    return desc, None, med, None, wrkout
+def helper(dis, description, precautions, medications, diets, workout):
+    """Retrieve additional details for a disease."""
+    try:
+        desc = description.loc[description['Disease'] == dis, 'Description']
+        desc = desc.values[0] if not desc.empty else "Description not available"
 
-# Model Prediction function
-def get_predicted_value(patient_symptoms):
+        pre = precautions.loc[precautions['Disease'] == dis, ['Precaution_1', 'Precaution_2', 'Precaution_3', 'Precaution_4']]
+        pre = pre.values.flatten().tolist() if not pre.empty else ["No precautions available"]
+
+        med = medications.loc[medications['Disease'] == dis, 'Medication']
+        med = med.tolist() if not med.empty else ["No medications available"]
+        if isinstance(med, str):
+            med = ast.literal_eval(med)
+        else:
+            med = med
+
+        diet = diets.loc[diets['Disease'] == dis, 'Diet']
+        diet = diet.tolist() if not diet.empty else ["No diet recommendations"]
+
+        wrkout = workout.loc[workout['disease'] == dis, 'workout']
+        wrkout = wrkout.tolist() if not wrkout.empty else ["No workout suggestions"]
+
+        return desc, pre, med, diet, wrkout
+    except Exception as e:
+        print(f"Error retrieving details for disease '{dis}': {e}")
+        return "Error retrieving details", [], [], [], []
+
+# Prediction function
+def get_predicted_value(patient_symptoms, symptoms_dict, diseases_list, model):
+    """Predict the disease based on symptoms."""
     try:
         input_vector = np.zeros(len(symptoms_dict))
-        for item in patient_symptoms:
-            if item in symptoms_dict:
-                input_vector[symptoms_dict[item]] = 1
-        return diseases_list[svc.predict([input_vector])[0]]
+
+        # Map symptoms to input vector
+        for symptom in patient_symptoms:
+            clean_symptom = symptom.strip().lower().replace(" ", "_")
+            if clean_symptom in symptoms_dict:
+                symptom_index = symptoms_dict[clean_symptom]
+                input_vector[symptom_index] = 1
+            else:
+                print(f"Warning: Symptom '{symptom}' not recognized.")
+
+        # Predict the disease
+        predicted_index = model.predict(input_vector.reshape(1, -1))[0]
+        return diseases_list.get(predicted_index, "Unknown Disease")
     except Exception as e:
-        return "Error in prediction. Please check the symptoms or try again later."
+        print(f"Error during prediction: {e}")
+        return "Prediction Failed"
 
 # Routes
 @app.route("/")
@@ -250,37 +286,34 @@ def index():
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    if request.method == 'POST':
-        # Get the selected symptoms from the request
-        symptoms = request.form.get('symptoms', '').split(',')  # Handle empty input gracefully
+    symptoms = request.form.get('symptoms', '').split(',')
+    symptoms = [s for s in symptoms if s.strip()]
 
-        if not symptoms or symptoms == ['']:  # Check if no symptoms were provided
-            message = "Please select symptoms from the dropdown list."
-            return render_template('index.html', message=message, unique_symptoms=unique_symptoms)
-        
-        # Get the predicted disease
-        predicted_disease = get_predicted_value(symptoms)
-        
-        # Get additional details using helper function (excluding precautions and diet)
-        dis_des, _, medications, _, workout = helper(predicted_disease)
+    if not symptoms:
+        return render_template('index.html', message="No symptoms provided. Please select symptoms.", unique_symptoms=unique_symptoms)
 
-        # Render the results in the frontend
-        return render_template(
-            'index.html',
-            predicted_disease=predicted_disease,
-            dis_des=dis_des,
-            medications=medications,
-            workout=workout,
-            unique_symptoms=unique_symptoms
-        )
+    predicted_disease = get_predicted_value(symptoms, symptoms_dict, diseases_list, svc)
+    if predicted_disease == "Prediction Failed":
+        return render_template('index.html', message="Prediction failed. Please try again.", unique_symptoms=unique_symptoms)
 
-@app.route('/about')
-def about():
-    return render_template("about.html")
+    # Pass global `workout` explicitly
+    dis_des, pre, med, diet, wrkout = helper(predicted_disease, description, precautions, medications, diets, workout)
 
-@app.route('/contact')
-def contact():
-    return render_template("contact.html")
+    # Sanitize medications data
+    if isinstance(med, str):
+        med = ast.literal_eval(med)
+    med = [m.strip() for m in med if isinstance(m, str)]
 
-if __name__ == '__main__':
+    return render_template(
+        'index.html',
+        predicted_disease=predicted_disease,
+        dis_des=dis_des,
+        #precautions=pre,
+        medications=med,
+        #diet=diet,
+        workout=wrkout,
+        unique_symptoms=unique_symptoms
+    )
+
+if __name__ == "__main__":
     app.run(debug=True)

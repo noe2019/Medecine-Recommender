@@ -15,29 +15,37 @@
             padding: 40px;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
         }
+
+        .autocomplete-dropdown {
+            position: absolute;
+            background: white;
+            z-index: 1000;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            max-height: 200px;
+            overflow-y: auto;
+            width: 100%;
+        }
+
+        .autocomplete-item {
+            padding: 10px;
+            cursor: pointer;
+        }
+
+        .autocomplete-item:hover {
+            background: #f1f1f1;
+        }
     </style>
 </head>
 
 <body>
-    <!-- Navbar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container-fluid">
             <a class="navbar-brand" href="#">AI Doctor</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    <!-- <li class="nav-item"><a class="nav-link" href="#about">About</a></li>
-                    <li class="nav-item"><a class="nav-link" href="#contact">Contact</a></li> -->
-                </ul>
-            </div>
         </div>
     </nav>
-    
 
-    <!-- Main Content -->
-    <div class="container">
+    <div class="container mt-4">
         <h1 class="text-center text-success mb-4">Tell us about your symptoms</h1>
         <div class="form-container">
             <form action="/predict" method="post">
@@ -46,112 +54,91 @@
                     <input type="text" id="symptom-input" class="form-control" autocomplete="off" placeholder="Start typing a symptom...">
                     <div id="autocomplete-list" class="autocomplete-dropdown"></div>
                 </div>
-            
+
                 <ul id="selected-symptoms" class="list-group mb-3"></ul>
-            
-                <!-- Hidden input to send selected symptoms -->
                 <input type="hidden" name="symptoms" id="symptoms-hidden-input">
-            
-                <button type="button" id="add-symptom" class="btn btn-primary mb-2">Add Symptom</button>
                 <button type="submit" class="btn btn-danger">Get Diagnosis</button>
             </form>
-            
-            <!-- Results Section -->
-            <!-- Results Section -->
-{% if predicted_disease %}
-<div class="mt-5">
-    <h2>Diagnosis Results</h2>
-    <p><strong>Predicted Disease:</strong> {{ predicted_disease }}</p>
-    <p><strong>Description:</strong> {{ dis_des }}</p>
 
-    <h4>Medications:</h4>
-    <ul>
-        {% for medication in medications %}
-        <li>{{ medication }}</li>
-        {% endfor %}
-    </ul>
+            {% if predicted_disease %}
+            <div class="mt-5">
+                <h2>Diagnosis Results</h2>
+                <p><strong>Predicted Disease:</strong> {{ predicted_disease }}</p>
+                <p><strong>Description:</strong> {{ dis_des }}</p>
 
-    <h4>Suggestions:</h4>
-    <ul>
-        {% for workout in workout %}
-        <li>{{ workout }}</li>
-        {% endfor %}
-    </ul>
-</div>
-{% endif %}
+                <h4>Medications:</h4>
+                <ul>
+                    {% for medication in medications %}
+                    <li>{{ medication }}</li>
+                    {% endfor %}
+                </ul>
 
-            
+                <h4>Recommendations:</h4>
+                <ul>
+                    {% for workout in workout %}
+                    <li>{{ workout }}</li>
+                    {% endfor %}
+                </ul>
 
-    <!-- JavaScript -->
+                <!-- <h4>Precautions:</h4>
+                <ul>
+                    {% for precaution in precautions %}
+                    <li>{{ precaution }}</li>
+                    {% endfor %}
+                </ul>
+
+                <h4>Diet Recommendations:</h4>
+                <ul>
+                    {% for item in diet %}
+                    <li>{{ item }}</li>
+                    {% endfor %}
+                </ul> -->
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
     <script>
         const symptoms = {{ unique_symptoms | tojson }};
-const inputField = document.getElementById('symptom-input');
-const autocompleteList = document.getElementById('autocomplete-list');
-const selectedSymptomsList = document.getElementById('selected-symptoms');
-const symptomsHiddenInput = document.getElementById('symptoms-hidden-input');
+        const inputField = document.getElementById('symptom-input');
+        const autocompleteList = document.getElementById('autocomplete-list');
+        const selectedSymptomsList = document.getElementById('selected-symptoms');
+        const symptomsHiddenInput = document.getElementById('symptoms-hidden-input');
 
-let selectedSymptoms = [];
+        let selectedSymptoms = [];
 
-// Autocomplete functionality
-inputField.addEventListener('input', () => {
-    const query = inputField.value.toLowerCase();
-    autocompleteList.innerHTML = ''; // Clear the dropdown
-
-    if (query) {
-        const filteredSymptoms = symptoms.filter(symptom =>
-            symptom.toLowerCase().includes(query) && !selectedSymptoms.includes(symptom)
-        );
-
-        filteredSymptoms.forEach(symptom => {
-            const item = document.createElement('div');
-            item.className = 'autocomplete-item';
-            item.textContent = symptom;
-
-            // Add symptom on click
-            item.addEventListener('click', () => {
-                addSymptomToList(symptom); // Add selected symptom
-                inputField.value = ''; // Clear input
-                autocompleteList.innerHTML = ''; // Clear dropdown
-            });
-
-            autocompleteList.appendChild(item);
-        });
-    }
-});
-
-// Add a symptom to the selected list
-function addSymptomToList(symptom) {
-    if (!selectedSymptoms.includes(symptom)) {
-        selectedSymptoms.push(symptom);
-
-        // Update hidden input field
-        symptomsHiddenInput.value = selectedSymptoms.join(',');
-
-        const listItem = document.createElement('li');
-        listItem.className = 'list-group-item d-flex justify-content-between align-items-center';
-        listItem.textContent = symptom;
-
-        const removeButton = document.createElement('button');
-        removeButton.className = 'btn btn-danger btn-sm';
-        removeButton.textContent = 'Remove';
-
-        removeButton.addEventListener('click', () => {
-            selectedSymptoms = selectedSymptoms.filter(s => s !== symptom);
-            symptomsHiddenInput.value = selectedSymptoms.join(',');
-            listItem.remove();
+        inputField.addEventListener('input', () => {
+            const query = inputField.value.toLowerCase();
+            autocompleteList.innerHTML = '';
+            if (query) {
+                const filteredSymptoms = symptoms.filter(symptom =>
+                    symptom.toLowerCase().includes(query) && !selectedSymptoms.includes(symptom)
+                );
+                filteredSymptoms.forEach(symptom => {
+                    const item = document.createElement('div');
+                    item.className = 'autocomplete-item';
+                    item.textContent = symptom;
+                    item.addEventListener('click', () => {
+                        addSymptomToList(symptom);
+                        inputField.value = '';
+                        autocompleteList.innerHTML = '';
+                    });
+                    autocompleteList.appendChild(item);
+                });
+            }
         });
 
-        listItem.appendChild(removeButton);
-        selectedSymptomsList.appendChild(listItem);
-    }
-}
-
-// Close dropdown if clicking outside
-document.addEventListener('click', (event) => {
-    if (!autocompleteList.contains(event.target) && event.target !== inputField) {
-        autocompleteList.innerHTML = '';
-    }
-});
+        function addSymptomToList(symptom) {
+            if (!selectedSymptoms.includes(symptom)) {
+                selectedSymptoms.push(symptom);
+                symptomsHiddenInput.value = selectedSymptoms.join(',');
+                const listItem = document.createElement('li');
+                listItem.className = 'list-group-item';
+                listItem.textContent = symptom;
+                selectedSymptomsList.appendChild(listItem);
+            }
+        }
     </script>
 </body>
+
 </html>
