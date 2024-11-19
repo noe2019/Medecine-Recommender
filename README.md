@@ -1,9 +1,6 @@
-```markdown
-# AI Health Care Center
+# My AI Doctor
 
 This documentation explains the backend, frontend, and application installation process for the AI Health Care Center web app, which predicts diseases based on user-inputted symptoms and provides recommendations.
-
----
 
 ## 1. Backend
 
@@ -46,7 +43,6 @@ This documentation explains the backend, frontend, and application installation 
 - `/`: Displays the homepage with the symptom selection form.
 - `/predict`: Accepts symptoms from the form, predicts the disease, and displays the result along with recommendations.
 
----
 
 ## 2. Frontend
 
@@ -128,4 +124,3 @@ This documentation explains the backend, frontend, and application installation 
 - Modify file paths in `main.py` if deploying on a different environment.
 
 For questions or feedback, contact noecaremee@gmail.com.
-```
