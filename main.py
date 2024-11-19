@@ -28,10 +28,8 @@ unique_symptoms = (
     .values.ravel('K')  # Flatten the DataFrame
     .tolist()
 )
-#unique_symptoms = list(set(symptom for symptom in unique_symptoms if isinstance(symptom, str) and symptom.strip()))
 # Remove whitespace and filter out invalid entries
 unique_symptoms = list(set(symptom.strip() for symptom in unique_symptoms if isinstance(symptom, str) and symptom.strip()))
-
 # Sort the symptoms
 unique_symptoms = sorted(unique_symptoms)
 
