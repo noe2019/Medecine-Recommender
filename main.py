@@ -1,4 +1,5 @@
 from flask import Flask, request, render_template, jsonify
+import os
 import numpy as np
 import pandas as pd
 import pickle
@@ -6,45 +7,44 @@ import pickle
 # Flask app
 app = Flask(__name__)
 
-# Load datasets
-sym_des = pd.read_csv("datasets/symtoms_df.csv")
-precautions = pd.read_csv("datasets/precautions_df.csv")
-workout = pd.read_csv("datasets/workout_df.csv")
-description = pd.read_csv("datasets/description.csv")
-medications = pd.read_csv('datasets/medications.csv')
-diets = pd.read_csv("datasets/diets.csv")
+# Load datasets with robust file paths
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATASETS_DIR = os.path.join(BASE_DIR, "datasets")
+MODELS_DIR = os.path.join(BASE_DIR, "models")
 
-# Extract unique symptoms from the symptoms dataset
-# Specify the columns to extract unique values from
-columns_to_check = ['Symptom_1','Symptom_2','Symptom_3','Symptom_4']
+sym_des = pd.read_csv(os.path.join(DATASETS_DIR, "symtoms_df.csv"))
+precautions = pd.read_csv(os.path.join(DATASETS_DIR, "precautions_df.csv"))
+workout = pd.read_csv(os.path.join(DATASETS_DIR, "workout_df.csv"))
+description = pd.read_csv(os.path.join(DATASETS_DIR, "description.csv"))
+medications = pd.read_csv(os.path.join(DATASETS_DIR, "medications.csv"))
+diets = pd.read_csv(os.path.join(DATASETS_DIR, "diets.csv"))
 
-# Extract unique symptoms, flatten the values, and filter out NaN or non-string entries
-unique_symptoms = pd.unique(sym_des[columns_to_check].values.ravel('K'))
-unique_symptoms = [symptom for symptom in unique_symptoms if isinstance(symptom, str) and symptom.strip()]  # Remove NaNs and empty strings
+# Extract unique symptoms from all symptom columns
+columns_to_check = ['Symptom_1', 'Symptom_2', 'Symptom_3', 'Symptom_4']
 
-# Sort the filtered unique symptoms
+# Flatten values into a single array, remove NaNs, and empty strings
+unique_symptoms = (
+    sym_des[columns_to_check]
+    .values.ravel('K')  # Flatten the DataFrame
+    .tolist()
+)
+#unique_symptoms = list(set(symptom for symptom in unique_symptoms if isinstance(symptom, str) and symptom.strip()))
+# Remove whitespace and filter out invalid entries
+unique_symptoms = list(set(symptom.strip() for symptom in unique_symptoms if isinstance(symptom, str) and symptom.strip()))
+
+# Sort the symptoms
 unique_symptoms = sorted(unique_symptoms)
 
 
 # Load model
-svc = pickle.load(open('models/svc.pkl', 'rb'))
+try:
+    svc = pickle.load(open(os.path.join(MODELS_DIR, 'svc.pkl'), 'rb'))
+except FileNotFoundError:
+    raise FileNotFoundError("Model file not found. Please ensure 'svc.pkl' is present.")
+except pickle.UnpicklingError:
+    raise ValueError("Error loading the model. Ensure it's a valid pickle file.")
 
-# Helper function
-def helper(dis):
-    desc = description[description['Disease'] == dis]['Description'].values[0]
-
-    pre = precautions[precautions['Disease'] == dis][
-        ['Precaution_1', 'Precaution_2', 'Precaution_3', 'Precaution_4']
-    ].values[0].tolist()
-
-    med = medications[medications['Disease'] == dis]['Medication'].tolist()
-
-    die = diets[diets['Disease'] == dis]['Diet'].tolist()
-
-    wrkout = workout[workout['disease'] == dis]['workout'].tolist()
-
-    return desc, pre, med, die, wrkout
-
+# Symptom dictionary
 symptoms_dict = {
     'itching': 0,
     'skin_rash': 1,
@@ -224,13 +224,26 @@ diseases_list = {
     40: 'hepatitis A'
 }
 
+# Helper function
+def helper(dis):
+    """
+    Retrieves description, medications, and workout suggestions for the given disease.
+    """
+    desc = description[description['Disease'] == dis]['Description'].values[0] if not description.empty else "Description not available"
+    med = medications[medications['Disease'] == dis]['Medication'].tolist() if not medications.empty else ["No medications available"]
+    wrkout = workout[workout['disease'] == dis]['workout'].tolist() if not workout.empty else ["No workouts available"]
+    return desc, None, med, None, wrkout
+
 # Model Prediction function
 def get_predicted_value(patient_symptoms):
-    input_vector = np.zeros(len(symptoms_dict))
-    for item in patient_symptoms:
-        if item in symptoms_dict:
-            input_vector[symptoms_dict[item]] = 1
-    return diseases_list[svc.predict([input_vector])[0]]
+    try:
+        input_vector = np.zeros(len(symptoms_dict))
+        for item in patient_symptoms:
+            if item in symptoms_dict:
+                input_vector[symptoms_dict[item]] = 1
+        return diseases_list[svc.predict([input_vector])[0]]
+    except Exception as e:
+        return "Error in prediction. Please check the symptoms or try again later."
 
 # Routes
 @app.route("/")
@@ -240,24 +253,28 @@ def index():
 @app.route('/predict', methods=['POST'])
 def predict():
     if request.method == 'POST':
-        symptoms = request.form.getlist('symptoms')  # Retrieve selected symptoms
-        if not symptoms:
+        # Get the selected symptoms from the request
+        symptoms = request.form.get('symptoms', '').split(',')  # Handle empty input gracefully
+
+        if not symptoms or symptoms == ['']:  # Check if no symptoms were provided
             message = "Please select symptoms from the dropdown list."
             return render_template('index.html', message=message, unique_symptoms=unique_symptoms)
-        else:
-            predicted_disease = get_predicted_value(symptoms)
-            dis_des, precautions, medications, rec_diet, workout = helper(predicted_disease)
+        
+        # Get the predicted disease
+        predicted_disease = get_predicted_value(symptoms)
+        
+        # Get additional details using helper function (excluding precautions and diet)
+        dis_des, _, medications, _, workout = helper(predicted_disease)
 
-            return render_template(
-                'index.html',
-                predicted_disease=predicted_disease,
-                dis_des=dis_des,
-                my_precautions=precautions,
-                medications=medications,
-                my_diet=rec_diet,
-                workout=workout,
-                unique_symptoms=unique_symptoms
-            )
+        # Render the results in the frontend
+        return render_template(
+            'index.html',
+            predicted_disease=predicted_disease,
+            dis_des=dis_des,
+            medications=medications,
+            workout=workout,
+            unique_symptoms=unique_symptoms
+        )
 
 @app.route('/about')
 def about():
@@ -266,14 +283,6 @@ def about():
 @app.route('/contact')
 def contact():
     return render_template("contact.html")
-
-@app.route('/developer')
-def developer():
-    return render_template("developer.html")
-
-@app.route('/blog')
-def blog():
-    return render_template("blog.html")
 
 if __name__ == '__main__':
     app.run(debug=True)
