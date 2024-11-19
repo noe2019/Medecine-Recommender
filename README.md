@@ -120,7 +120,7 @@ This documentation explains the backend, frontend, and application installation 
    ```
 2. Run the app with Gunicorn:
    ```bash
-   gunicorn -w 4 -b 0.0.0.0:8000 app:app
+   gunicorn -w 4 -b 0.0.0.0:8000 main:app
    ```
 
 ### Notes
