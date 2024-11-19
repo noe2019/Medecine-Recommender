@@ -1,6 +1,6 @@
 # My AI Doctor
 
-This documentation explains the backend, frontend, and application installation process for the AI Doctor web app, which predicts diseases based on user-inputted symptoms and provides recommendations.
+This documentation explains the backend, frontend, and application installation process for the AI Doctor web app, which predicts diseases based on user-inputted symptoms and provides medications and life style recommendations.
 
 ## 1. Backend
 
