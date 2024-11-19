@@ -14,9 +14,9 @@ This documentation explains the backend, frontend, and application installation 
 ### Key Features
 - **Symptom Autocomplete**: Backend provides a list of unique symptoms extracted from datasets to support the autocomplete functionality.
 - **Disease Prediction**: A Random Forest model predicts the disease based on user symptoms.
-- **Recommendations**:
+- **Output**:
   - **Medications**
-  - **Workout suggestions**
+  - **Lifestyle recommendations**
   - **Disease descriptions**
 
 ### File Structure
